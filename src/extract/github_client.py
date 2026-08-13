@@ -3,25 +3,21 @@ import time
 import logging
 import requests
 from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta, timezone
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
 class GitHubClient:
-    """REST API Client for interacting with GitHub Actions endpoints with built-in
-
-    pagination, rate-limit inspection, and exponential backoff retry mechanics.
-    """
+    """REST API Client for GitHub Actions telemetry with rate-limit tracking,"""
 
     BASE_URL = "https://api.github.com"
 
     def __init__(self, token: Optional[str] = None):
         self.token = token or os.getenv("GITHUB_TOKEN")
         if not self.token:
-            logger.warning(
-                "No GITHUB_TOKEN provided! Requests will be capped at 60 req/hr."
-            )
+            logger.warning("No GITHUB_TOKEN provided! Requests capped at 60 req/hr.")
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -29,138 +25,128 @@ class GitHubClient:
             "X-GitHub-Api-Version": "2022-11-28",
         })
         if self.token:
-            self.session.headers.update(
-                {"Authorization": f"Bearer {self.token}"}
-            )
+            self.session.headers.update({"Authorization": f"Bearer {self.token}"})
 
-    def _request_with_retry(
-        self,
-        url: str,
-        params: Optional[Dict[str, Any]] = None,
-        max_retries: int = 5,
-    ) -> requests.Response:
-        """Executes HTTP GET requests with rate-limit tracking and exponential backoff.
-
-        :param url: Target REST API URL
-        :param params: HTTP query parameters
-        :param max_retries: Maximum number of retry attempts before raising
-        :return: Successful requests.Response object
-        """
+    def _request_with_retry(self, url: str, params: Optional[Dict[str, Any]] = None, max_retries: int = 5) -> requests.Response:
         params = params or {}
         retries = 0
         backoff_sec = 2
 
         while retries <= max_retries:
             response = self.session.get(url, params=params, timeout=15)
-
-            # Extract rate limit headers from GitHub response
             rate_remaining = response.headers.get("X-RateLimit-Remaining")
             rate_reset = response.headers.get("X-RateLimit-Reset")
 
             if response.status_code == 200:
-                logger.debug(
-                    f"Request successful. Rate limit remaining: {rate_remaining}"
-                )
                 return response
 
-            # Handle 429 (Rate Limited) or 403 with 0 remaining calls
-            if response.status_code == 429 or (
-                response.status_code == 403 and rate_remaining == "0"
-            ):
-                reset_time = (
-                    int(rate_reset) if rate_reset else time.time() + backoff_sec
-                )
-                sleep_duration = (
-                    max(reset_time - int(time.time()), backoff_sec) + 1
-                )
-                logger.warning(
-                    f"Rate limit hit (HTTP {response.status_code}). Backing off for {sleep_duration} seconds..."
-                )
+            if response.status_code == 429 or (response.status_code == 403 and rate_remaining == "0"):
+                reset_time = int(rate_reset) if rate_reset else time.time() + backoff_sec
+                sleep_duration = max(reset_time - int(time.time()), backoff_sec) + 1
+                logger.warning(f"Rate limit hit. Sleeping for {sleep_duration}s...")
                 time.sleep(sleep_duration)
                 retries += 1
                 backoff_sec *= 2
                 continue
 
-            # Handle transient server errors (5xx)
             if response.status_code >= 500:
-                logger.warning(
-                    f"Server error (HTTP {response.status_code}). Retrying in {backoff_sec}s (Attempt {retries + 1}/{max_retries})..."
-                )
                 time.sleep(backoff_sec)
                 retries += 1
                 backoff_sec *= 2
                 continue
 
-            # Raise immediate exception for 400, 401, 404 client errors
             response.raise_for_status()
 
-        raise requests.HTTPError(
-            f"Exceeded max retries ({max_retries}) for URL: {url}"
-        )
+        raise requests.HTTPError(f"Exceeded max retries for URL: {url}")
 
-    def fetch_workflow_runs(
+    def fetch_workflow_runs_incremental(
         self,
         owner: str,
         repo: str,
-        created_filter: Optional[str] = None,
-        max_pages: int = 10,
+        days_back: int = 7,
+        max_pages: int = 5
     ) -> List[Dict[str, Any]]:
-        """Paginates through workflow runs for a target repository.
+        """Fetches workflow runs using a created date range filter and preserves
 
-        :param owner: Repo owner (e.g., 'pallets')
-        :param repo: Repo name (e.g., 'flask')
-        :param created_filter: Date filter (e.g., '2026-07-01..2026-08-10')
-        :param max_pages: Safety cap on total pages during testing
-        :return: List of raw workflow run dictionaries
+        composite attempt identifiers (run_id, run_attempt).
         """
         endpoint = f"{self.BASE_URL}/repos/{owner}/{repo}/actions/runs"
-        params = {"per_page": 100, "page": 1}
-        if created_filter:
-            params["created"] = created_filter
-
-        all_runs: List[Dict[str, Any]] = []
+        
+        # 1. Created window for API request
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=days_back)
+        created_filter = f"{start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}"
+        print(f"created_filter{created_filter}")
+        params = {"per_page": 100, "page": 1, "created": created_filter}
+        processed_runs: List[Dict[str, Any]] = []
 
         while params["page"] <= max_pages:
-            logger.info(
-                f"Fetching {owner}/{repo} workflow runs — Page {params['page']}..."
-            )
+            logger.info(f"Fetching {owner}/{repo} runs (Created Filter: {created_filter}) — Page {params['page']}...")
             response = self._request_with_retry(endpoint, params=params)
             data = response.json()
-
             runs = data.get("workflow_runs", [])
+
             if not runs:
-                logger.info(
-                    f"No more runs found for {owner}/{repo} at page {params['page']}."
-                )
+                logger.info(f"No more runs found on page {params['page']}.")
                 break
 
-            all_runs.extend(runs)
+            for run in runs:
+                run_id = run.get("id")
+                run_attempt = run.get("run_attempt", 1)
+                
+                # Composite Key creation: "31477751036_1"
+                composite_key = f"{run_id}_{run_attempt}"
+                
+                # Enrich the dictionary with explicitly tracked metadata
+                run["composite_key"] = composite_key
+                run["repo_owner"] = owner
+                run["repo_name"] = repo
+                
+                processed_runs.append(run)
 
-            # If page returns fewer items than requested (per_page=100), we hit the end
             if len(runs) < params["per_page"]:
                 break
 
             params["page"] += 1
 
-        logger.info(
-            f"Completed extraction for {owner}/{repo}. Retrieved {len(all_runs)} total workflow runs across {params['page']} page(s)."
-        )
-        return all_runs
+        logger.info(f"Successfully retrieved {len(processed_runs)} incremental runs for {owner}/{repo}.")
+        return processed_runs
+    def fetch_run_jobs(self, owner: str, repo: str, run_id: int) -> List[Dict[str, Any]]:
+        """Fetches all jobs and steps associated with a specific workflow run ID.
 
+        Endpoint: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
+        """
+        endpoint = f"{self.BASE_URL}/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"
+        response = self._request_with_retry(endpoint)
+        data = response.json()
+        jobs = data.get("jobs", [])
+
+        processed_jobs = []
+        for job in jobs:
+            job_id = job.get("id")
+            run_attempt = job.get("run_attempt", 1)
+            
+            # Composite key for job attempt: "31477751036_12345678_1"
+            job["composite_job_key"] = f"{run_id}_{job_id}_{run_attempt}"
+            job["run_composite_key"] = f"{run_id}_{run_attempt}"
+            
+            processed_jobs.append(job)
+
+        return processed_jobs
 
 if __name__ == "__main__":
-    # Test client against both target repositories
     client = GitHubClient()
-
-    for target_repo in ["pallets/flask", "fastapi/fastapi"]:
-        owner, repo = target_repo.split("/")
-        logger.info(f"\n--- Testing Extraction for {target_repo} ---")
-        extracted_runs = client.fetch_workflow_runs(
-            owner, repo, max_pages=2
-        )
-        print(f" [+] Extracted {len(extracted_runs)} runs from {target_repo}.")
-        if extracted_runs:
-            sample = extracted_runs[0]
-            print(
-                f" [+] Sample Run ID: {sample['id']} | Status: {sample['status']} | Conclusion: {sample['conclusion']}"
-            )
+    runs = client.fetch_workflow_runs_incremental("pallets", "flask", days_back=7, max_pages=1)
+    
+    if runs:
+        sample_run = runs[0]
+        print(f"\n[+] Extracted Run ID: {sample_run['id']} | Composite Key: {sample_run['composite_key']}")
+        
+        # Fetch jobs for this specific run
+        jobs = client.fetch_run_jobs("pallets", "flask", sample_run["id"])
+        print(f"[+] Total Jobs found in Run #{sample_run['id']}: {len(jobs)}")
+        
+        if jobs:
+            sample_job = jobs[0]
+            print(f" [+] Sample Job Name: {sample_job['name']} | Status: {sample_job['status']} | Conclusion: {sample_job['conclusion']}")
+            print(f" [+] Total Steps in Job: {len(sample_job.get('steps', []))}")
