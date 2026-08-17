@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: int_failure_events
+    description: "Intermediate model for failed step and job executions. Grain: One row per failed step or job execution within a workflow run."
+    columns:
+      - name: job_id
+        description: "Primary key / foreign key identifier for the job."
+        tests:
+          - not_null
+      - name: workflow_run_id
+        description: "Foreign key identifier for the workflow run."
+        tests:
+          - not_null

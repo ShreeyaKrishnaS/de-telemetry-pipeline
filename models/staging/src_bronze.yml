@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: TELEMETRY_DB
+    schema: BRONZE
+    tables:
+      - name: workflow_runs_raw

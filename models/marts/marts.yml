@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: fct_workflow_runs
+    description: "Fact table for workflow executions. Grain: One row per workflow run execution."
+    columns:
+      - name: workflow_run_id
+        description: "Primary key for the workflow run."
+        tests:
+          - not_null
+          - unique
+
+  - name: fct_step_executions
+    description: "Fact table for individual step executions. Grain: One row per step executed within a job."
+    columns:
+      - name: job_id
+        description: "Foreign key for the job."
+        tests:
+          - not_null
+      - name: step_number
+        description: "Sequential number of the step within the job."
+        tests:
+          - not_null
+
+  - name: fct_actionable_failures
+    description: "Fact table linking failures to error logs. Grain: One row per failed step or job execution combined with log line output."
+    columns:
+      - name: job_id
+        description: "Foreign key identifier for the job."
+        tests:
+          - not_null
+
+  - name: dim_repositories
+    description: "Dimension table for repositories/workflows. Grain: One row per unique workflow name and head branch combination."
+    columns:
+      - name: workflow_name
+        description: "Name of the workflow file/definition."
+        tests:
+          - not_null
+
+  - name: dim_commits
+    description: "Dimension table for Git commits. Grain: One row per unique head_sha, head_branch, and triggered_by combination."
+    columns:
+      - name: head_sha
+        description: "Git commit hash."
+        tests:
+          - not_null
+
+  - name: dim_error_categories
+    description: "Dimension table for failure categories. Grain: One row per unique failure reason extracted from failed step executions."
+    columns:
+      - name: failure_reason
+        description: "Distinct error classification or failure reason."
+        tests:
+          - not_null
+          - unique

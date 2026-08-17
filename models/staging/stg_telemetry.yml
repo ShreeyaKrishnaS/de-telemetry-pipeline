@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: stg_workflow_runs
+    description: "Flattened workflow run level metadata"
+    columns:
+      - name: workflow_run_id
+        tests:
+          - unique
+          - not_null
+      - name: status
+        tests:
+          - not_null
+
+  - name: stg_jobs
+    description: "Flattened individual job records from each workflow run"
+    columns:
+      - name: job_id
+        tests:
+          - unique
+          - not_null
+      - name: workflow_run_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_workflow_runs')
+                field: workflow_run_id
+
+  - name: stg_steps
+    description: "Flattened step level metrics"
+    columns:
+      - name: job_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_jobs')
+                field: job_id
+      - name: step_number
+        tests:
+          - not_null
+
+  - name: stg_failed_logs
+    description: "Filtered logs containing step-level failures"
+    columns:
+      - name: workflow_run_id
+        tests:
+          - not_null
+      - name: job_id
+        tests:
+          - not_null
