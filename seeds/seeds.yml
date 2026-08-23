@@ -1,0 +1,31 @@
+version: 2
+
+seeds:
+  - name: error_classification_rules
+    description: "Version-controlled lookup table mapping error patterns to owner teams and fixes."
+    config:
+      schema: silver
+      column_types:
+        error_pattern: varchar(255)
+        category: varchar(100)
+        assigned_team: varchar(100)
+        priority: integer
+        recommended_fix: varchar(500)
+    columns:
+      - name: error_pattern
+        description: "SQL ILIKE pattern for matching error logs."
+        tests:
+          - not_null
+          - unique
+      - name: category
+        tests:
+          - not_null
+      - name: assigned_team
+        tests:
+          - not_null
+      - name: priority
+        tests:
+          - not_null
+      - name: recommended_fix
+        tests:
+          - not_null

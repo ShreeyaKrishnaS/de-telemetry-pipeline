@@ -20,10 +20,10 @@ plugins/
 *.pid
 
 # dbt
-dbt/target/
-dbt/dbt_packages/
-dbt/logs/
-
+target/
+dbt_packages/
+dbt_modules/
+*.log
 # Local Data Drops
 data/
 *.jsonl

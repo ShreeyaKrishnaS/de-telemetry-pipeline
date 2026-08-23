@@ -1,5 +1,33 @@
 version: '3.8'
 
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.2-python3.11
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqnvq8=
+    - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+    - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+    - _PIP_ADDITIONAL_REQUIREMENTS=dbt-snowflake==1.8.3 snowflake-connector-python==3.12.2 google-genai pydantic==2.9.2 python-dotenv==1.0.1 pyyaml==6.0.2 boto3==1.35.0
+  env_file:
+    - .env
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./config:/opt/airflow/config
+    - ./scripts:/opt/airflow/scripts
+    - ./models:/opt/airflow/models
+    - ./seeds:/opt/airflow/seeds
+    - ./macros:/opt/airflow/macros
+    - ./dbt_project.yml:/opt/airflow/dbt_project.yml
+    - ~/.dbt:/home/airflow/.dbt:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -17,6 +45,50 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: telemetry_airflow_init
+    command: version
+    environment:
+      - _AIRFLOW_DB_MIGRATE=true
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: telemetry_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: telemetry_airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

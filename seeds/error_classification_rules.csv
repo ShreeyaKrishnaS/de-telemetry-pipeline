@@ -1,0 +1,11 @@
+error_pattern,category,assigned_team,priority,recommended_fix
+%ModuleNotFoundError%,Missing Dependency,Backend Team,1,Add the missing package to pyproject.toml or requirements.txt
+%ImportError%,Missing Dependency,Backend Team,1,Check module imports or circular dependencies in Python source
+%AssertionError%,Test Failure,QA / Feature Team,2,Inspect failed pytest assertions and mock fixtures
+%OperationalError%,Database Infrastructure,Platform / DevOps,1,Check database connection string also migrations or local postgres service
+%ConnectionRefusedError%,Network Infrastructure,Platform / DevOps,1,Ensure required service or container is running and listening on correct port
+%mypy%found%error%,Type Check Failure,Backend Team,3,Fix static type annotations flagged by mypy
+%ruff%failed%,Lint / Style Violation,Engineering Core,3,Run ruff format or ruff check --fix locally before pushing
+%flake8%failed%,Lint / Style Violation,Engineering Core,3,Fix code formatting and style issues reported by flake8
+%timed out%,Execution Timeout,Platform / DevOps,2,Increase step timeout limit or optimize slow-running tests
+%command not found%,Runner Environment,Platform / DevOps,1,Ensure tool or CLI binary is installed on the CI runner
