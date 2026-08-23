@@ -24,7 +24,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff pytest pytest-mock pydantic pyyaml boto3 snowflake-connector-python dbt-snowflake apache-airflow
+          pip install ruff pytest pytest-mock responses pydantic pyyaml boto3 snowflake-connector-python dbt-snowflake apache-airflow
 
       - name: Run Ruff Linter
         run: |
