@@ -24,39 +24,18 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff pytest pytest-mock pydantic pyyaml boto3 snowflake-connector-python dbt-snowflake
+          pip install ruff pytest pytest-mock pydantic pyyaml boto3 snowflake-connector-python dbt-snowflake apache-airflow
 
       - name: Run Ruff Linter
         run: |
-          ruff check . --select=E9,F63,F7,F82 --show-source
+          ruff check . --select=E9,F63,F7,F82
 
       - name: Run Pytest Unit Tests
         run: |
           pytest tests/ -v
 
       - name: Validate dbt Syntax & Models
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT || 'dummy_account' }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER || 'dummy_user' }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD || 'dummy_password' }}
-          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE || 'SYSADMIN' }}
-          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE || 'TELEMETRY_DB' }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE || 'COMPUTE_WH' }}
-          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA || 'DEV' }}
         run: |
           mkdir -p ~/.dbt
-          echo "telemetry_dbt:
-            target: dev
-            outputs:
-              dev:
-                type: snowflake
-                account: dummy_account
-                user: dummy_user
-                password: dummy_password
-                role: SYSADMIN
-                database: TELEMETRY_DB
-                warehouse: COMPUTE_WH
-                schema: DEV
-                threads: 1
-                client_session_keep_alive: False" > ~/.dbt/profiles.yml
+          printf "telemetry_dbt:\n  target: dev\n  outputs:\n    dev:\n      type: snowflake\n      account: dummy_account\n      user: dummy_user\n      password: dummy_password\n      role: SYSADMIN\n      database: TELEMETRY_DB\n      warehouse: COMPUTE_WH\n      schema: DEV\n      threads: 1\n      client_session_keep_alive: False\n" > ~/.dbt/profiles.yml
           dbt parse --profiles-dir ~/.dbt
