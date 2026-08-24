@@ -21,6 +21,8 @@ x-airflow-common: &airflow-common
     - ./models:/opt/airflow/models
     - ./seeds:/opt/airflow/seeds
     - ./macros:/opt/airflow/macros
+    - ./src:/opt/airflow/src
+    - ./data_lake:/opt/airflow/data_lake
     - ./dbt_project.yml:/opt/airflow/dbt_project.yml
     - ~/.dbt:/home/airflow/.dbt:ro
   user: "${AIRFLOW_UID:-50000}:0"
